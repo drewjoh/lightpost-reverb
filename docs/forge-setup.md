@@ -52,6 +52,23 @@ php -r "echo bin2hex(random_bytes(16)), PHP_EOL;"
 
 `REVERB_APP_KEY` must be a plain string — **not** a `base64:...` value. That prefix is Laravel's `APP_KEY` format and will not work as a Reverb key.
 
+**Port distinction** — these are different ports and both must be correct:
+
+- `REVERB_SERVER_PORT=8080` — port Reverb binds to locally
+- `REVERB_PORT=443` — port everyone dials publicly (nginx terminates TLS and proxies to 8080). Also used by the Pulse Connections recorder when it calls Reverb's Pusher HTTP API, so this must be `443`, not `8080`.
+
+## Broadcasting Install
+
+Laravel 11 makes broadcasting opt-in. Without running the installer, `BroadcastServiceProvider` isn't registered and the `broadcast` alias can't be resolved — which silently breaks the Pulse Reverb Connections recorder (Messages still works, because it listens to events from inside `reverb:start`).
+
+One-time setup on the `ws.lightpost.app` site:
+
+```bash
+php artisan install:broadcasting --without-reverb
+```
+
+(Decline any prompts to install Reverb/Node — already in place.) This adds `App\Providers\BroadcastServiceProvider` to `bootstrap/providers.php`.
+
 ## Daemons
 
 Configure on the `ws.lightpost.app` site (Forge → Daemons):
@@ -62,6 +79,12 @@ Configure on the `ws.lightpost.app` site (Forge → Daemons):
 | `php artisan pulse:check` | Emits `IsolatedBeat` events that drive Pulse recorders (required for Reverb cards to populate) |
 
 Both run as `forge`, directory `/home/forge/ws.lightpost.app/current`.
+
+**After any `.env` change**, restart daemons so they reload — Forge daemons cache env at launch:
+
+```bash
+sudo supervisorctl restart all
+```
 
 ## Pulse Authorization
 
@@ -97,6 +120,13 @@ Wired up in two places:
 - `config/pulse.php` — registers `ReverbConnections` and `ReverbMessages` recorders
 - `resources/views/vendor/pulse/dashboard.blade.php` — includes `<livewire:reverb.connections />` and `<livewire:reverb.messages />`
 
+The two recorders work differently and fail for different reasons:
+
+- **Messages** fires on `MessageSent`/`MessageReceived` events inside the `reverb:start` process. Works as long as Reverb is handling traffic.
+- **Connections** runs inside `pulse:check`, which polls Reverb's Pusher HTTP API (`/apps/{id}/connections`) every 15s. Needs `install:broadcasting` to have been run, `REVERB_PORT=443` (not the internal 8080), and the daemon restarted after env changes.
+
+If Messages updates but Connections is empty, that's the polling call failing — run the tinker test in the "Verifying the Stack" section.
+
 Recorders fire on `IsolatedBeat`, which is why `pulse:check` must run as a daemon.
 
 ## Private Channel Auth
@@ -128,7 +158,10 @@ VITE_REVERB_SCHEME="${REVERB_SCHEME}"
 
 Rebuild assets (`npm run build`) after any change — Vite bakes values into the compiled bundle.
 
-Common mistake: setting `VITE_REVERB_PORT=8080`. That's the internal port Reverb listens on; clients must use `443` because nginx terminates TLS and proxies internally.
+Common mistakes:
+
+- Setting `VITE_REVERB_PORT=8080`. That's the internal port Reverb listens on; clients must use `443` because nginx terminates TLS and proxies internally.
+- Hardcoding `VITE_REVERB_APP_KEY` instead of mirroring `REVERB_APP_KEY`. Use `VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"` to prevent drift and stray characters.
 
 ## PECL uv Extension
 
@@ -168,9 +201,12 @@ From the server:
 # Reverb listening?
 ss -tlnp | grep 8080
 
-# Live connection count via the Pusher API
-php artisan tinker --execute="\$a = app(\Laravel\Reverb\Contracts\ApplicationProvider::class)->all()->first(); dump(app('broadcast')->pusher(\$a->toArray())->get('/connections'));"
+# Live connection count via the Pusher API (exercises the same path the Pulse Connections recorder uses)
+cd /home/forge/ws.lightpost.app/current
+php artisan tinker --execute='$a = app(\Laravel\Reverb\Contracts\ApplicationProvider::class)->all()->first(); try { dump(app(\Illuminate\Broadcasting\BroadcastManager::class)->pusher($a->toArray())->get("/connections")); } catch (\Throwable $e) { dump(get_class($e).": ".$e->getMessage()); }'
 ```
+
+A `cURL error 28: SSL connection timeout` here usually means `REVERB_PORT=8080` (points at the unreachable internal port). Should be `443`. Restart daemons after fixing.
 
 ## Troubleshooting
 
@@ -182,3 +218,5 @@ php artisan tinker --execute="\$a = app(\Laravel\Reverb\Contracts\ApplicationPro
 | `NS_ERROR_NET_TIMEOUT` on port 8080 | Client `VITE_REVERB_PORT` set to `8080` instead of `443` |
 | `HTTP/2 500` from nginx on `/app/...` | Forge Reverb integration not applied — likely the domain is an alias instead of its own site |
 | One `101` per second, then disconnect | App key mismatch, or private channel auth failing on app side — check DevTools → WS → Messages |
+| Pulse **Messages** populates but **Connections** is empty | Broadcasting not installed (`install:broadcasting`), or `REVERB_PORT` on the daemon box is `8080` instead of `443`, or daemons not restarted after env change |
+| `cURL error 28: SSL connection timeout` from the connections tinker test | `REVERB_PORT=8080` in `.env` — should be `443`, then `supervisorctl restart all` |

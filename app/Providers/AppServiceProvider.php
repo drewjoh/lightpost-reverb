@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Pulse\Livewire\ReverbEventTypes;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Livewire\LivewireManager;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -26,6 +28,10 @@ class AppServiceProvider extends ServiceProvider
                 config('pulse.allowed_ips', []),
                 true
             );
+        });
+
+        $this->callAfterResolving('livewire', function (LivewireManager $livewire) {
+            $livewire->component('reverb.event-types', ReverbEventTypes::class);
         });
     }
 }

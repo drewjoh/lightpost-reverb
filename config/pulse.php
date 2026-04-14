@@ -3,6 +3,7 @@
 use Laravel\Pulse\Http\Middleware\Authorize;
 use Laravel\Pulse\Pulse;
 use Laravel\Pulse\Recorders;
+use App\Pulse\Recorders\ReverbEventTypes;
 use Laravel\Reverb\Pulse\Recorders\ReverbConnections;
 use Laravel\Reverb\Pulse\Recorders\ReverbMessages;
 
@@ -237,6 +238,10 @@ return [
 
         ReverbMessages::class => [
             'sample_rate' => env('PULSE_REVERB_MESSAGES_SAMPLE_RATE', 1),
+        ],
+
+        ReverbEventTypes::class => [
+            'sample_rate' => env('PULSE_REVERB_EVENT_TYPES_SAMPLE_RATE', 1),
         ],
 
         Recorders\UserRequests::class => [

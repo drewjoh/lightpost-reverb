@@ -32,6 +32,11 @@ return [
 
     'path' => env('PULSE_PATH', 'pulse'),
 
+    'allowed_ips' => array_filter(array_map(
+        'trim',
+        explode(',', (string) env('PULSE_ALLOWED_IPS', ''))
+    )),
+
     /*
     |--------------------------------------------------------------------------
     | Pulse Master Switch

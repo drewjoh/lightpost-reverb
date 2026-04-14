@@ -22,10 +22,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::define('viewPulse', function ($user = null) {
-            $allowed = array_filter(array_map(
-                'trim',
-                explode(',', (string) env('PULSE_ALLOWED_IPS', ''))
-            ));
+            $allowed = config('pulse.allowed_ips', []);
 
             Log::info('Pulse IP check', [
                 'ip' => request()->ip(),

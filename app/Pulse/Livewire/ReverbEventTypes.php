@@ -19,26 +19,17 @@ class ReverbEventTypes extends Card
     public function render()
     {
         [$events, $time, $runAt] = $this->remember(function () {
-            $sent = Pulse::aggregateTypes(
-                'reverb_event_type:sent',
+            $rows = Pulse::aggregateTypes(
+                ['reverb_event_type:sent', 'reverb_event_type:received'],
                 'count',
                 $this->periodAsInterval(),
                 limit: 200,
-            )->keyBy('key');
+            );
 
-            $received = Pulse::aggregateTypes(
-                'reverb_event_type:received',
-                'count',
-                $this->periodAsInterval(),
-                limit: 200,
-            )->keyBy('key');
-
-            $keys = $sent->keys()->merge($received->keys())->unique()->values();
-
-            return $keys->map(fn ($key) => [
-                'event' => $key,
-                'sent' => (int) ($sent[$key]->count ?? 0),
-                'received' => (int) ($received[$key]->count ?? 0),
+            return $rows->map(fn ($row) => [
+                'event' => $row->key,
+                'sent' => (int) ($row->{'reverb_event_type:sent'} ?? 0),
+                'received' => (int) ($row->{'reverb_event_type:received'} ?? 0),
             ])
                 ->sortByDesc(fn ($row) => $row['sent'] + $row['received'])
                 ->values();
